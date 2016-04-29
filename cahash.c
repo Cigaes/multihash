@@ -54,6 +54,7 @@ static uint8_t buffer[4 * 1024 * 1024]; /* power of 2 needed */
 
 static uint32_t crc32_table[256];
 
+static unsigned opt_no_cache = 0;
 static unsigned opt_script = 0;
 static unsigned opt_verbose = 0;
 
@@ -472,26 +473,32 @@ cahash_file_data(const char *path, struct stat *st)
 static int
 cahash_file(unsigned index, const char *path)
 {
-    char *rpath;
+    char *rpath = NULL;
     struct stat st;
     unsigned i, todo;
 
-    rpath = realpath(path, NULL);
-    if (rpath == NULL) {
-        perror(path);
-        return 1;
-    }
-    if (stat(rpath, &st) < 0) {
-        perror(rpath);
-        free(rpath);
-        return 1;
-    }
-    todo = 0;
-    for (i = 0; i < NB_HASH; i++) {
-        context[i].cached = 0;
-        cahash_from_cache(rpath, &st, &context[i]);
-        if (!context[i].cached)
-            todo++;
+    if (opt_no_cache) {
+        for (i = 0; i < NB_HASH; i++)
+            context[i].cached = 0;
+        todo = NB_HASH;
+    } else {
+        rpath = realpath(path, NULL);
+        if (rpath == NULL) {
+            perror(path);
+            return 1;
+        }
+        if (stat(rpath, &st) < 0) {
+            perror(rpath);
+            free(rpath);
+            return 1;
+        }
+        todo = 0;
+        for (i = 0; i < NB_HASH; i++) {
+            context[i].cached = 0;
+            cahash_from_cache(rpath, &st, &context[i]);
+            if (!context[i].cached)
+                todo++;
+        }
     }
     if (todo) {
         if (cahash_file_data(path, &st)) {
@@ -501,7 +508,7 @@ cahash_file(unsigned index, const char *path)
     }
     for (i = 0; i < NB_HASH; i++) {
         cahash_output(index, path, &context[i]);
-        if (!context[i].cached)
+        if (!opt_no_cache && !context[i].cached)
             cahash_to_cache(rpath, &st, &context[i]);
     }
     free(rpath);
@@ -522,8 +529,11 @@ main(int argc, char **argv)
 {
     int opt, i, errors = 0;
 
-    while ((opt = getopt(argc, argv, "svh")) != -1) {
+    while ((opt = getopt(argc, argv, "Csvh")) != -1) {
         switch (opt) {
+            case 'C':
+                opt_no_cache = 1;
+                break;
             case 's':
                 opt_script = 1;
                 break;
