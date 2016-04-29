@@ -385,17 +385,11 @@ cahash_output(unsigned index, const char *path, Hash_context *ctx)
 }
 
 static int
-cahash_file_data(const char *path, struct stat *st)
+cahash_file_data(int fd, struct stat *st)
 {
     unsigned fill_max, pos = 0, rd, avail = sizeof(buffer);
     unsigned i;
-    int fd;
 
-    fd = open(path, O_RDONLY);
-    if (fd < 0) {
-        perror(path);
-        return 1;
-    }
     posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
     posix_fadvise(fd, 0, 0, POSIX_FADV_WILLNEED);
     posix_fadvise(fd, 0, 0, POSIX_FADV_NOREUSE);
@@ -453,7 +447,6 @@ cahash_file_data(const char *path, struct stat *st)
         perror("fstat");
         exit(1);
     }
-    close(fd);
     for (i = 0; i < NB_HASH; i++) {
         if (context[i].cached)
             continue;
@@ -468,6 +461,21 @@ cahash_file_data(const char *path, struct stat *st)
         pthread_join(context[i].thread, NULL);
     }
     return 0;
+}
+
+static int
+cahash_file_data_from_path(const char *path, struct stat *st)
+{
+    int fd, ret;
+
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        perror(path);
+        return 1;
+    }
+    ret = cahash_file_data(fd, st);
+    close(fd);
+    return ret;
 }
 
 static int
@@ -501,7 +509,7 @@ cahash_file(unsigned index, const char *path)
         }
     }
     if (todo) {
-        if (cahash_file_data(path, &st)) {
+        if (cahash_file_data_from_path(path, &st)) {
             free(rpath);
             return 1;
         }
