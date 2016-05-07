@@ -1,4 +1,3 @@
-#define _DEFAULT_SOURCE /* for db.h */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -8,98 +7,30 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
-#include <db.h>
 
+#include "cache.h"
 #include "parhash.h"
 
 #define MIN_READ 65536
 #define MAX_READ (1024 * 1024)
 
+typedef struct Cahash {
+    Parhash *ph;
+    Stat_cache *cache;
+} Cahash;
+
 static unsigned opt_no_cache = 0;
 static unsigned opt_script = 0;
 static unsigned opt_verbose = 0;
 
-static DB_ENV *cache_db_env = NULL;
-static DB *cache_db = NULL;
-
-static void
-create_parent_directory(char *path, char **end)
-{
-    char *sep = path, *p;
-
-    assert(*sep == '/');
-    for (p = path + 1; *p != 0; p++) {
-        if (*p == '/') {
-            *sep = '/';
-            sep = p;
-            *(p++) = 0;
-            if (mkdir(path, 0700) < 0 && errno != EEXIST) {
-                perror(path);
-                exit(1);
-            }
-        }
-    }
-    *end = sep;
-}
-
-static void
-cache_open(void)
-{
-    int ret;
-    char path[2048], *home, *dir_end;
-
-    if (cache_db != NULL)
-        return;
-    home = getenv("HOME");
-    if (home == NULL) {
-        fprintf(stderr, "$HOME required\n");
-        exit(1);
-    }
-    ret = snprintf(path, sizeof(path), "%s/.cache/cahash/files.db", home);
-    if (ret >= (int)sizeof(path)) {
-        fprintf(stderr, "$HOME too long\n");
-        exit(1);
-    }
-    create_parent_directory(path, &dir_end);
-    /* leaves \0 at the last / in the path */
-    ret = db_env_create(&cache_db_env, 0);
-    if (ret != 0) {
-        fprintf(stderr, "Failed to create cache database environment: %s\n",
-            db_strerror(ret));
-        exit(1);
-    }
-    ret = cache_db_env->open(cache_db_env, path,
-        DB_CREATE | DB_INIT_MPOOL | DB_INIT_LOCK, 0666);
-    if (ret != 0) {
-        fprintf(stderr, "Failed to open cache database environment: %s\n",
-            db_strerror(ret));
-        exit(1);
-    }
-    ret = db_create(&cache_db, cache_db_env, 0);
-    if (ret != 0) {
-        fprintf(stderr, "Failed to create cache database: %s\n",
-            db_strerror(ret));
-        exit(1);
-    }
-    *dir_end = '/';
-    ret = cache_db->open(cache_db, NULL, path, "file_hash",
-        DB_BTREE, DB_CREATE, 0666);
-    if (ret != 0) {
-        fprintf(stderr, "Failed to open cache database %s: %s\n",
-            path, db_strerror(ret));
-        exit(1);
-    }
-    cache_db->sync(cache_db, 0);
-}
-
 static unsigned
-fill_buffer(Parhash *parhash, int fd, unsigned max)
+fill_buffer(Parhash *ph, int fd, unsigned max)
 {
     struct iovec iov[2];
     ssize_t r;
     unsigned n;
 
-    n = parhash_get_buffer(parhash, max,
+    n = parhash_get_buffer(ph, max,
         &iov[0].iov_base, &iov[0].iov_len,
         &iov[1].iov_base, &iov[1].iov_len);
     r = readv(fd, iov, n);
@@ -108,79 +39,6 @@ fill_buffer(Parhash *parhash, int fd, unsigned max)
         exit(1);
     }
     return r;
-}
-
-static void
-key_from_filename(DBT *dbt, const char *rpath, const struct stat *st,
-    const char *hash)
-{
-    unsigned i, l, bufsize = 0;
-    char *buf = NULL;
-
-    for (i = 0; i < 2; i++) {
-        l = snprintf(buf, bufsize, "%s%c%ju:%ju:%ju.%09u:%s",
-            rpath, 0, (uintmax_t)st->st_size, (uintmax_t)st->st_ino,
-            (uintmax_t)st->st_ctim.tv_sec, (unsigned)st->st_ctim.tv_nsec,
-            hash);
-        if (l <= 0) {
-            perror("snprintf");
-            exit(1);
-        }
-        if (buf == NULL) {
-            bufsize = l + 1;
-            buf = malloc(bufsize);
-            if (buf == NULL) {
-                perror("malloc");
-                exit(1);
-            }
-        }
-    }
-    dbt->data = buf;
-    dbt->size = bufsize - 1;
-}
-
-static void
-cahash_from_cache(const char *rpath, const struct stat *st, Parhash_info *hi)
-{
-    DBT tkey = { 0 }, tdata = { 0 };
-    int ret;
-
-    cache_open();
-    key_from_filename(&tkey, rpath, st, hi->name);
-    tdata.data = hi->out;
-    tdata.ulen = hi->size;
-    tdata.flags = DB_DBT_USERMEM;
-    ret = cache_db->get(cache_db, NULL, &tkey, &tdata, 0);
-    free(tkey.data);
-    if (ret != 0) {
-        if (ret == DB_NOTFOUND)
-            return;
-        fprintf(stderr, "Failed to find in cache: %s\n", db_strerror(ret));
-        exit(1);
-    }
-    if (tdata.size != hi->size) {
-        fprintf(stderr, "Inconsistent size for %s:%s\n", hi->name, rpath);
-        exit(1);
-    }
-    hi->disabled = 1;
-}
-
-static void
-cahash_to_cache(const char *rpath, const struct stat *st, Parhash_info *hi)
-{
-    DBT tkey = { 0 }, tdata = { 0 };
-    int ret;
-
-    cache_open();
-    key_from_filename(&tkey, rpath, st, hi->name);
-    tdata.data = hi->out;
-    tdata.size = hi->size;
-    ret = cache_db->put(cache_db, NULL, &tkey, &tdata, 0);
-    if (ret != 0) {
-        fprintf(stderr, "Failed to insert in cache: %s\n", db_strerror(ret));
-        exit(1);
-    }
-    free(tkey.data);
 }
 
 static void
@@ -198,24 +56,24 @@ cahash_output(unsigned index, const char *path, Parhash_info *hi)
 }
 
 static int
-cahash_file_data(Parhash *parhash, int fd, struct stat *st)
+cahash_file_data(Parhash *ph, int fd, struct stat *st)
 {
     unsigned rd;
 
-    if (parhash_start(parhash) < 0)
+    if (parhash_start(ph) < 0)
         exit(1);
     posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
     posix_fadvise(fd, 0, 0, POSIX_FADV_WILLNEED);
     posix_fadvise(fd, 0, 0, POSIX_FADV_NOREUSE);
     while (1) {
-        parhash_wait_buffer(parhash, MIN_READ);
+        parhash_wait_buffer(ph, MIN_READ);
         /* Do net read too much at once to avoid starving the threads */
-        rd = fill_buffer(parhash, fd, MAX_READ);
+        rd = fill_buffer(ph, fd, MAX_READ);
         if (rd == 0)
             break;
-        parhash_advance(parhash, rd);
+        parhash_advance(ph, rd);
     }
-    parhash_finish(parhash);
+    parhash_finish(ph);
 
     if (fstat(fd, st) < 0) {
         perror("fstat");
@@ -225,7 +83,7 @@ cahash_file_data(Parhash *parhash, int fd, struct stat *st)
 }
 
 static int
-cahash_file_data_from_path(Parhash *parhash, const char *path, struct stat *st)
+cahash_file_data_from_path(Parhash *ph, const char *path, struct stat *st)
 {
     int fd, ret;
 
@@ -234,21 +92,22 @@ cahash_file_data_from_path(Parhash *parhash, const char *path, struct stat *st)
         perror(path);
         return 1;
     }
-    ret = cahash_file_data(parhash, fd, st);
+    ret = cahash_file_data(ph, fd, st);
     close(fd);
     return ret;
 }
 
 static int
-cahash_file(Parhash *parhash, unsigned index, const char *path)
+cahash_file(Cahash *c, unsigned index, const char *path)
 {
     Parhash_info *hi;
     char *rpath = NULL;
     struct stat st;
     unsigned i, todo;
+    int ret;
 
     if (opt_no_cache) {
-        for (i = 0; (hi = parhash_get_info(parhash, i)) != NULL; i++)
+        for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++)
             hi->disabled = 0;
         todo = i;
     } else {
@@ -263,26 +122,29 @@ cahash_file(Parhash *parhash, unsigned index, const char *path)
             return 1;
         }
         todo = 0;
-        for (i = 0; (hi = parhash_get_info(parhash, i)) != NULL; i++) {
+        for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++) {
             hi->disabled = 0;
-            cahash_from_cache(rpath, &st, hi);
+            ret = stat_cache_get(c->cache, rpath, &st,
+                hi->name, hi->out, hi->size);
+            if (ret > 0)
+                hi->disabled = 1;
             if (!hi->disabled)
                 todo++;
         }
     }
     if (todo) {
-        if (cahash_file_data_from_path(parhash, path, &st)) {
+        if (cahash_file_data_from_path(c->ph, path, &st)) {
             free(rpath);
             return 1;
         }
     }
-    for (i = 0; (hi = parhash_get_info(parhash, i)) != NULL; i++) {
+    for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++) {
         cahash_output(index, path, hi);
         if (!opt_no_cache && !hi->disabled)
-            cahash_to_cache(rpath, &st, hi);
+            stat_cache_set(c->cache, rpath, &st, hi->name, hi->out, hi->size);
     }
     if (opt_verbose) {
-        for (i = 0; (hi = parhash_get_info(parhash, i)) != NULL; i++)
+        for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++)
             if (!hi->disabled)
                 fprintf(stderr, "%s: %.3fs\n", hi->name,
                     hi->utime_sec + hi->utime_msec / 1E6);
@@ -303,7 +165,7 @@ usage(int ret)
 int
 main(int argc, char **argv)
 {
-    Parhash *parhash;
+    Cahash c;
     int opt, i, errors = 0;
 
     while ((opt = getopt(argc, argv, "Csvh")) != -1) {
@@ -327,14 +189,13 @@ main(int argc, char **argv)
     argv += optind;
     if (argc == 0)
         usage(1);
-    if (parhash_alloc(&parhash) < 0)
+    if (parhash_alloc(&c.ph) < 0)
+        exit(1);
+    if (stat_cache_alloc(&c.cache) < 0)
         exit(1);
     for (i = 0; i < argc; i++)
-        errors += cahash_file(parhash, i, argv[i]);
-    if (cache_db != NULL) {
-        cache_db->close(cache_db, 0);
-        cache_db_env->close(cache_db_env, 0);
-    }
-    parhash_free(&parhash);
+        errors += cahash_file(&c, i, argv[i]);
+    stat_cache_free(&c.cache);
+    parhash_free(&c.ph);
     return errors > 0;
 }

@@ -3,6 +3,7 @@ CFLAGS += -g -O2
 
 OBJECTS =
 OBJECTS += cahash.o
+OBJECTS += cache.o
 OBJECTS += parhash.o
 
 cahash: $(OBJECTS)
@@ -11,5 +12,6 @@ cahash: $(OBJECTS)
 $(OBJECTS): %.o: %.c
 	$(CC) $(CFLAGS) -pthread -c -o $@ $<
 
-cahash.o: parhash.h
+cahash.o: cache.h parhash.h
+cache.o: cache.h
 parhash.o: parhash.h
