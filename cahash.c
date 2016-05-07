@@ -17,11 +17,12 @@
 typedef struct Cahash {
     Parhash *ph;
     Stat_cache *cache;
+    struct Cahash_options {
+        uint8_t no_cache;
+        uint8_t script;
+        uint8_t verbose;
+    } opt;
 } Cahash;
-
-static unsigned opt_no_cache = 0;
-static unsigned opt_script = 0;
-static unsigned opt_verbose = 0;
 
 static unsigned
 fill_buffer(Parhash *ph, int fd, unsigned max)
@@ -42,14 +43,14 @@ fill_buffer(Parhash *ph, int fd, unsigned max)
 }
 
 static void
-cahash_output(unsigned index, const char *path, Parhash_info *hi)
+cahash_output(Cahash *c, unsigned index, const char *path, Parhash_info *hi)
 {
     unsigned i;
 
     printf("%s:", hi->name);
     for (i = 0; i < hi->size; i++)
         printf("%02x", hi->out[i]);
-    if (opt_script)
+    if (c->opt.script)
         printf("  %09d\n", index);
     else
         printf("  %s\n", path);
@@ -106,7 +107,7 @@ cahash_file(Cahash *c, unsigned index, const char *path)
     unsigned i, todo;
     int ret;
 
-    if (opt_no_cache) {
+    if (c->opt.no_cache) {
         for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++)
             hi->disabled = 0;
         todo = i;
@@ -139,11 +140,11 @@ cahash_file(Cahash *c, unsigned index, const char *path)
         }
     }
     for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++) {
-        cahash_output(index, path, hi);
-        if (!opt_no_cache && !hi->disabled)
+        cahash_output(c, index, path, hi);
+        if (!c->opt.no_cache && !hi->disabled)
             stat_cache_set(c->cache, rpath, &st, hi->name, hi->out, hi->size);
     }
-    if (opt_verbose) {
+    if (c->opt.verbose) {
         for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++)
             if (!hi->disabled)
                 fprintf(stderr, "%s: %.3fs\n", hi->name,
@@ -165,19 +166,22 @@ usage(int ret)
 int
 main(int argc, char **argv)
 {
-    Cahash c;
+    Cahash cahash, *c = &cahash;
     int opt, i, errors = 0;
 
+    c->opt.no_cache = 0;
+    c->opt.script = 0;
+    c->opt.verbose = 0;
     while ((opt = getopt(argc, argv, "Csvh")) != -1) {
         switch (opt) {
             case 'C':
-                opt_no_cache = 1;
+                c->opt.no_cache = 1;
                 break;
             case 's':
-                opt_script = 1;
+                c->opt.script = 1;
                 break;
             case 'v':
-                opt_verbose = 1;
+                c->opt.verbose = 1;
                 break;
             case 'h':
                 usage(0);
@@ -189,13 +193,13 @@ main(int argc, char **argv)
     argv += optind;
     if (argc == 0)
         usage(1);
-    if (parhash_alloc(&c.ph) < 0)
+    if (parhash_alloc(&c->ph) < 0)
         exit(1);
-    if (stat_cache_alloc(&c.cache) < 0)
+    if (stat_cache_alloc(&c->cache) < 0)
         exit(1);
     for (i = 0; i < argc; i++)
-        errors += cahash_file(&c, i, argv[i]);
-    stat_cache_free(&c.cache);
-    parhash_free(&c.ph);
+        errors += cahash_file(c, i, argv[i]);
+    stat_cache_free(&c->cache);
+    parhash_free(&c->ph);
     return errors > 0;
 }
