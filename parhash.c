@@ -125,7 +125,7 @@ compute_rusage(Hash_context *ctx)
 }
 
 static void *
-cahash_thread(void *ctx_v)
+parhash_thread(void *ctx_v)
 {
     Hash_context *ctx = ctx_v;
     Parhash *parhash = ctx->parhash;
@@ -244,7 +244,7 @@ parhash_start(Parhash *parhash)
         ctx = &parhash->ctx[i];
         if (ctx->pub.disabled)
             continue;
-        if (pthread_create(&ctx->thread, NULL, cahash_thread, ctx) < 0) {
+        if (pthread_create(&ctx->thread, NULL, parhash_thread, ctx) < 0) {
             perror("pthread_create");
             return -1;
         }

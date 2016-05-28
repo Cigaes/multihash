@@ -14,15 +14,15 @@
 #define MIN_READ 65536
 #define MAX_READ (1024 * 1024)
 
-typedef struct Cahash {
+typedef struct Multihash {
     Parhash *ph;
     Stat_cache *cache;
-    struct Cahash_options {
+    struct Multihash_options {
         uint8_t no_cache;
         uint8_t script;
         uint8_t verbose;
     } opt;
-} Cahash;
+} Multihash;
 
 static unsigned
 fill_buffer(Parhash *ph, int fd, unsigned max)
@@ -43,21 +43,21 @@ fill_buffer(Parhash *ph, int fd, unsigned max)
 }
 
 static void
-cahash_output(Cahash *c, unsigned index, const char *path, Parhash_info *hi)
+multihash_output(Multihash *mh, unsigned index, const char *path, Parhash_info *hi)
 {
     unsigned i;
 
     printf("%s:", hi->name);
     for (i = 0; i < hi->size; i++)
         printf("%02x", hi->out[i]);
-    if (c->opt.script)
+    if (mh->opt.script)
         printf("  %09d\n", index);
     else
         printf("  %s\n", path);
 }
 
 static int
-cahash_file_data(Parhash *ph, int fd, struct stat *st)
+multihash_file_data(Parhash *ph, int fd, struct stat *st)
 {
     unsigned rd;
 
@@ -84,7 +84,7 @@ cahash_file_data(Parhash *ph, int fd, struct stat *st)
 }
 
 static int
-cahash_file_data_from_path(Parhash *ph, const char *path, struct stat *st)
+multihash_file_data_from_path(Parhash *ph, const char *path, struct stat *st)
 {
     int fd, ret;
 
@@ -93,13 +93,13 @@ cahash_file_data_from_path(Parhash *ph, const char *path, struct stat *st)
         perror(path);
         return 1;
     }
-    ret = cahash_file_data(ph, fd, st);
+    ret = multihash_file_data(ph, fd, st);
     close(fd);
     return ret;
 }
 
 static int
-cahash_file(Cahash *c, unsigned index, const char *path)
+multihash_file(Multihash *mh, unsigned index, const char *path)
 {
     Parhash_info *hi;
     char *rpath = NULL;
@@ -107,8 +107,8 @@ cahash_file(Cahash *c, unsigned index, const char *path)
     unsigned i, todo;
     int ret;
 
-    if (c->opt.no_cache) {
-        for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++)
+    if (mh->opt.no_cache) {
+        for (i = 0; (hi = parhash_get_info(mh->ph, i)) != NULL; i++)
             hi->disabled = 0;
         todo = i;
     } else {
@@ -123,9 +123,9 @@ cahash_file(Cahash *c, unsigned index, const char *path)
             return 1;
         }
         todo = 0;
-        for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++) {
+        for (i = 0; (hi = parhash_get_info(mh->ph, i)) != NULL; i++) {
             hi->disabled = 0;
-            ret = stat_cache_get(c->cache, rpath, &st,
+            ret = stat_cache_get(mh->cache, rpath, &st,
                 hi->name, hi->out, hi->size);
             if (ret > 0)
                 hi->disabled = 1;
@@ -134,18 +134,18 @@ cahash_file(Cahash *c, unsigned index, const char *path)
         }
     }
     if (todo) {
-        if (cahash_file_data_from_path(c->ph, path, &st)) {
+        if (multihash_file_data_from_path(mh->ph, path, &st)) {
             free(rpath);
             return 1;
         }
     }
-    for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++) {
-        cahash_output(c, index, path, hi);
-        if (!c->opt.no_cache && !hi->disabled)
-            stat_cache_set(c->cache, rpath, &st, hi->name, hi->out, hi->size);
+    for (i = 0; (hi = parhash_get_info(mh->ph, i)) != NULL; i++) {
+        multihash_output(mh, index, path, hi);
+        if (!mh->opt.no_cache && !hi->disabled)
+            stat_cache_set(mh->cache, rpath, &st, hi->name, hi->out, hi->size);
     }
-    if (c->opt.verbose) {
-        for (i = 0; (hi = parhash_get_info(c->ph, i)) != NULL; i++)
+    if (mh->opt.verbose) {
+        for (i = 0; (hi = parhash_get_info(mh->ph, i)) != NULL; i++)
             if (!hi->disabled)
                 fprintf(stderr, "%s: %.3fs\n", hi->name,
                     hi->utime_sec + hi->utime_msec / 1E6);
@@ -159,29 +159,29 @@ static void
 usage(int ret)
 {
     fprintf(ret == 0 ? stdout : stderr,
-        "Usage: cahash [options] files\n");
+        "Usage: multihash [options] files\n");
     exit(ret);
 }
 
 int
 main(int argc, char **argv)
 {
-    Cahash cahash, *c = &cahash;
+    Multihash multihash, *mh = &multihash;
     int opt, i, errors = 0;
 
-    c->opt.no_cache = 0;
-    c->opt.script = 0;
-    c->opt.verbose = 0;
+    mh->opt.no_cache = 0;
+    mh->opt.script = 0;
+    mh->opt.verbose = 0;
     while ((opt = getopt(argc, argv, "Csvh")) != -1) {
         switch (opt) {
             case 'C':
-                c->opt.no_cache = 1;
+                mh->opt.no_cache = 1;
                 break;
             case 's':
-                c->opt.script = 1;
+                mh->opt.script = 1;
                 break;
             case 'v':
-                c->opt.verbose = 1;
+                mh->opt.verbose = 1;
                 break;
             case 'h':
                 usage(0);
@@ -193,13 +193,13 @@ main(int argc, char **argv)
     argv += optind;
     if (argc == 0)
         usage(1);
-    if (parhash_alloc(&c->ph) < 0)
+    if (parhash_alloc(&mh->ph) < 0)
         exit(1);
-    if (stat_cache_alloc(&c->cache) < 0)
+    if (stat_cache_alloc(&mh->cache) < 0)
         exit(1);
     for (i = 0; i < argc; i++)
-        errors += cahash_file(c, i, argv[i]);
-    stat_cache_free(&c->cache);
-    parhash_free(&c->ph);
+        errors += multihash_file(mh, i, argv[i]);
+    stat_cache_free(&mh->cache);
+    parhash_free(&mh->ph);
     return errors > 0;
 }

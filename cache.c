@@ -75,7 +75,7 @@ stat_cache_open(Stat_cache *cache)
         fprintf(stderr, "$HOME required\n");
         exit(1);
     }
-    ret = snprintf(path, sizeof(path), "%s/.cache/cahash/files.db", home);
+    ret = snprintf(path, sizeof(path), "%s/.cache/multihash/files.db", home);
     if (ret >= (int)sizeof(path)) {
         fprintf(stderr, "$HOME too long\n");
         exit(1);
