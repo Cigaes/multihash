@@ -1,5 +1,15 @@
-CFLAGS += -Wall -W -Wno-pointer-sign -std=c99 -D_XOPEN_SOURCE=700 -fdiagnostics-color=auto
-CFLAGS += -g -O2
+#
+# For out-of-tree builds:
+# make -f /path/to/src/Makefile CFLAGS=... configure
+#
+
+ifeq ($(srcdir),)
+
+  srcdir = ./
+  CFLAGS += -O2 -std=c99 -D_XOPEN_SOURCE=700
+  CFLAGS += -Wall -W -Wno-pointer-sign -fdiagnostics-color=auto -g
+
+endif
 
 OBJECTS =
 OBJECTS += multihash.o
@@ -11,11 +21,22 @@ OBJECTS += treewalk.o
 multihash: $(OBJECTS)
 	$(CC) $(LDFLAGS) -pthread -o $@ $(OBJECTS) -lcrypto -ldb $(LIBS)
 
-$(OBJECTS): %.o: %.c
+$(OBJECTS): %.o: $(srcdir)%.c
 	$(CC) $(CFLAGS) -pthread -c -o $@ $<
 
-multihash.o: cache.h formatter.h parhash.h treewalk.h
-cache.o: cache.h
-formatter.o: formatter.h
-parhash.o: parhash.h
-treewalk.o: treewalk.h
+multihash.o cache.o: $(srcdir)cache.h
+multihash.o formatter.o: $(srcdir)formatter.h
+multihash.o parhash.o: $(srcdir)parhash.h
+multihash.o treewalk.o: $(srcdir)treewalk.h
+
+.PHONY: configure
+
+configure:
+	@if [ -e Makefile ]; then echo "Makefile is in the way"; false; fi
+	@{ \
+	  printf "srcdir = %s\n" $(dir $(MAKEFILE_LIST)) ; \
+	  printf "CFLAGS = %s\n" "$(CFLAGS)" ; \
+	  printf "LDFLAGS = %s\n" "$(LDFLAGS)" ; \
+	  printf "LIBS = %s\n" "$(LIBS)" ; \
+	  printf "include \$$(srcdir)Makefile\n" ; \
+	} > Makefile
