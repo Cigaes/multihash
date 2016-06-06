@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <errno.h>
 #include <assert.h>
 #include <unistd.h>
@@ -9,7 +10,9 @@
 #include <sys/uio.h>
 
 #include "cache.h"
+#include "formatter.h"
 #include "parhash.h"
+#include "treewalk.h"
 
 #define MIN_READ 65536
 #define MAX_READ (1024 * 1024)
@@ -17,8 +20,11 @@
 typedef struct Multihash {
     Parhash *ph;
     Stat_cache *cache;
+    Formatter *formatter;
+    const char *rec_root;
     struct Multihash_options {
         uint8_t no_cache;
+        uint8_t recursive;
         uint8_t script;
         uint8_t verbose;
     } opt;
@@ -43,17 +49,34 @@ fill_buffer(Parhash *ph, int fd, unsigned max)
 }
 
 static void
-multihash_output(Multihash *mh, unsigned index, const char *path, Parhash_info *hi)
+multihash_output(Multihash *mh, unsigned index, const char *path)
 {
-    unsigned i;
+    Parhash_info *hi;
+    char buf[512 / 4 + 1];
+    unsigned i, j;
 
-    printf("%s:", hi->name);
-    for (i = 0; i < hi->size; i++)
-        printf("%02x", hi->out[i]);
-    if (mh->opt.script)
-        printf("  %09d\n", index);
-    else
-        printf("  %s\n", path);
+    if (mh->formatter) {
+        formatter_dict_item(mh->formatter, "hash");
+        formatter_dict_open(mh->formatter);
+    }
+    for (i = 0; (hi = parhash_get_info(mh->ph, i)) != NULL; i++) {
+        assert(sizeof(buf) > hi->size * 2);
+        for (j = 0; j < hi->size; j++)
+            snprintf(buf + j * 2, 3, "%02x", hi->out[j]);
+        if (mh->formatter) {
+            formatter_dict_item(mh->formatter, hi->name);
+            formatter_string(mh->formatter, buf);
+        } else {
+            printf("%s:%s  ", hi->name, buf);
+            if (mh->opt.script)
+                printf("%09d\n", index);
+            else
+                printf("%s\n", path);
+        }
+    }
+    if (mh->formatter) {
+        formatter_dict_close(mh->formatter);
+    }
 }
 
 static int
@@ -99,7 +122,7 @@ multihash_file_data_from_path(Parhash *ph, const char *path, struct stat *st)
 }
 
 static int
-multihash_file(Multihash *mh, unsigned index, const char *path)
+multihash_file(Multihash *mh, unsigned index, const char *path, int fd)
 {
     Parhash_info *hi;
     char *rpath = NULL;
@@ -134,13 +157,15 @@ multihash_file(Multihash *mh, unsigned index, const char *path)
         }
     }
     if (todo) {
-        if (multihash_file_data_from_path(mh->ph, path, &st)) {
+        ret = fd < 0 ? multihash_file_data_from_path(mh->ph, path, &st) :
+            multihash_file_data(mh->ph, fd, &st);
+        if (ret != 0) {
             free(rpath);
             return 1;
         }
     }
+    multihash_output(mh, index, path);
     for (i = 0; (hi = parhash_get_info(mh->ph, i)) != NULL; i++) {
-        multihash_output(mh, index, path, hi);
         if (!mh->opt.no_cache && !hi->disabled)
             stat_cache_set(mh->cache, rpath, &st, hi->name, hi->out, hi->size);
     }
@@ -155,6 +180,109 @@ multihash_file(Multihash *mh, unsigned index, const char *path)
     return 0;
 }
 
+static int
+multihash_tree_file(Multihash *mh, Treewalk *tw)
+{
+    const char *rel_path;
+    const struct stat *st;
+    const char *type;
+    char *full_path;
+    size_t len1, len2;
+    char mode_str[5];
+    int ret = 0, fd;
+
+    rel_path = treewalk_get_path(tw);
+    st = treewalk_get_stat(tw);
+    fd = treewalk_get_fd(tw);
+
+    type =
+        S_ISREG (st->st_mode) ? "F" :
+        S_ISDIR (st->st_mode) ? "D" :
+        S_ISLNK (st->st_mode) ? "L" :
+        S_ISBLK (st->st_mode) ? "b" :
+        S_ISCHR (st->st_mode) ? "c" :
+        S_ISFIFO(st->st_mode) ? "p" :
+        S_ISSOCK(st->st_mode) ? "s" :
+        NULL;
+    if (type == NULL) {
+        fprintf(stderr, "unknown type\n");
+        return -1;
+    }
+    len1 = strlen(mh->rec_root);
+    len2 = strlen(rel_path);
+    full_path = malloc(len1 + len2 + 1);
+    if (full_path == NULL)
+        return -1;
+    memcpy(full_path, mh->rec_root, len1);
+    memcpy(full_path + len1, rel_path, len2 + 1);
+    snprintf(mode_str, sizeof(mode_str), "%04o\n", (int)(st->st_mode & 07777));
+
+    formatter_array_item(mh->formatter);
+    formatter_dict_open(mh->formatter);
+    formatter_dict_item(mh->formatter, "path");
+    formatter_string(mh->formatter, rel_path);
+    formatter_dict_item(mh->formatter, "type");
+    formatter_string(mh->formatter, type);
+    if (fd >= 0) {
+        formatter_dict_item(mh->formatter, "size");
+        formatter_integer(mh->formatter, st->st_size);
+    }
+    formatter_dict_item(mh->formatter, "mtime");
+    formatter_integer(mh->formatter, st->st_mtime);
+    formatter_dict_item(mh->formatter, "mode");
+    formatter_string(mh->formatter, mode_str);
+    if (fd >= 0)
+        ret = multihash_file(mh, 0, full_path, fd);
+    formatter_dict_close(mh->formatter);
+    free(full_path);
+    return ret == 0 ? 0 : -1;
+}
+
+static int
+formatted_output_prepare(Multihash *mh)
+{
+    int ret;
+
+    ret = formatter_alloc(&mh->formatter);
+    if (ret < 0)
+        return ret;
+    formatter_open(mh->formatter);
+    formatter_dict_open(mh->formatter);
+    formatter_dict_item(mh->formatter, "files");
+    formatter_array_open(mh->formatter);
+    return 0;
+}
+
+static void
+formatted_output_finish(Multihash *mh)
+{
+    formatter_array_close(mh->formatter);
+    formatter_dict_close(mh->formatter);
+    formatter_close(mh->formatter);
+    formatter_free(&mh->formatter);
+}
+
+static int
+multihash_tree(Multihash *mh)
+{
+    Treewalk *tw;
+    int ret;
+
+    ret = treewalk_open(&tw, mh->rec_root);
+    if (ret < 0)
+        return 1;
+    while (1) {
+        ret = multihash_tree_file(mh, tw);
+        if (ret < 0)
+            break;
+        ret = treewalk_next(tw);
+        if (ret <= 0)
+            break;
+    }
+    treewalk_free(&tw);
+    return ret < 0;
+}
+
 static void
 usage(int ret)
 {
@@ -167,15 +295,19 @@ int
 main(int argc, char **argv)
 {
     Multihash multihash, *mh = &multihash;
-    int opt, i, errors = 0;
+    int ret, opt, i, errors = 0;
 
+    mh->formatter = NULL;
     mh->opt.no_cache = 0;
     mh->opt.script = 0;
     mh->opt.verbose = 0;
-    while ((opt = getopt(argc, argv, "Csvh")) != -1) {
+    while ((opt = getopt(argc, argv, "Crsvh")) != -1) {
         switch (opt) {
             case 'C':
                 mh->opt.no_cache = 1;
+                break;
+            case 'r':
+                mh->opt.recursive = 1;
                 break;
             case 's':
                 mh->opt.script = 1;
@@ -197,8 +329,22 @@ main(int argc, char **argv)
         exit(1);
     if (stat_cache_alloc(&mh->cache) < 0)
         exit(1);
-    for (i = 0; i < argc; i++)
-        errors += multihash_file(mh, i, argv[i]);
+    if (mh->opt.recursive) {
+        if (argc != 1) {
+            fprintf(stderr, "multihash: only one path allowed in "
+                "recursive mode\n");
+            exit(1);
+        }
+        ret = formatted_output_prepare(mh);
+        if (ret < 0)
+            exit(1);
+        mh->rec_root = argv[0];
+        errors += multihash_tree(mh);
+        formatted_output_finish(mh);
+    } else {
+        for (i = 0; i < argc; i++)
+            errors += multihash_file(mh, i, argv[i], -1);
+    }
     stat_cache_free(&mh->cache);
     parhash_free(&mh->ph);
     return errors > 0;
