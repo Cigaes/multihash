@@ -1,0 +1,256 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <limits.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
+#include "treewalk.h"
+
+#define PATH_LEN 4095
+#define PATH_DEPTH 16
+
+typedef struct Treewalk_file {
+    char **files;
+    char *all_files;
+    int fd;
+    unsigned path_len;
+    unsigned nb_files;
+    unsigned cur_file;
+} Treewalk_file;
+
+struct Treewalk {
+    Treewalk_file stack[PATH_DEPTH];
+    unsigned char path[PATH_LEN + 1];
+    struct stat st;
+    unsigned depth;
+};
+
+static int
+read_directory_files(Treewalk_file *file, DIR *dir)
+{
+    struct dirent de_real, *de;
+    char *files = NULL;
+    size_t files_alloc = 0, files_used = 0, size;
+    unsigned nb_files = 0;
+    int ret;
+
+    while (1) {
+        ret = readdir_r(dir, &de_real, &de);
+        if (ret != 0) {
+            fprintf(stderr, "readdir_r failed with ret = %d\n", ret);
+            break;
+        }
+        if (de == NULL)
+            break;
+        if (de->d_name[0] == '.' && (de->d_name[1] == 0 ||
+                (de->d_name[1] == '.' && de->d_name[2] == 0)))
+            continue;
+        if (nb_files == UINT_MAX) {
+            fprintf(stderr, "too many files\n");
+            return -1;
+        }
+        size = strlen(de->d_name) + 1;
+        if (size > files_alloc - files_used) {
+            while (size > files_alloc - files_used && files_alloc < SIZE_MAX)
+                files_alloc |= (files_alloc << 1) | 0xFFF;
+            if (size > files_alloc - files_used) {
+                fprintf(stderr, "total file names too long\n");
+                return -1;
+            }
+            files = realloc(files, files_alloc);
+            if (files == NULL) {
+                perror("malloc");
+                return -1;
+            }
+            file->all_files = files;
+        }
+        memcpy(files + files_used, de->d_name, size);
+        files_used += size;
+        nb_files++;
+    }
+    file->nb_files = nb_files;
+    return 0;
+}
+
+static int compare_char_ptr(const void *a, const void *b)
+{
+    return strcmp(*(const char **)a, *(const char **)b);
+}
+
+static int
+read_directory(Treewalk *tw, Treewalk_file *file)
+{
+    DIR *dir;
+    char *f;
+    unsigned i;
+    int ret, fd;
+
+    /* closedir() will close it, but we need it for openat() */
+    fd = dup(file->fd);
+    if (fd < 0) {
+        perror("dup");
+        return -1;
+    }
+    dir = fdopendir(fd);
+    if (dir == NULL) {
+        perror(tw->path);
+        return -1;
+    }
+    ret = read_directory_files(file, dir);
+    closedir(dir);
+    if (ret < 0)
+        return ret;
+    file->files = calloc(file->nb_files, sizeof(*file->files));
+    if (file->files == NULL)
+        return -1;
+    f = file->all_files;
+    for (i = 0; i < file->nb_files; i++) {
+        file->files[i] = f;
+        f = strchr(f, 0) + 1;
+    }
+    qsort(file->files, file->nb_files, sizeof(*file->files), compare_char_ptr);
+    return 0;
+}
+
+static int
+examine_file(Treewalk *tw, int dir, const char *name)
+{
+    Treewalk_file *file = &tw->stack[tw->depth];
+    int fd = -1, ret;
+
+    /* stat() before open() in order to avoid opening special files */
+    file->fd = -1;
+    file->files = NULL;
+    file->all_files = NULL;
+    file->nb_files = 0;
+    file->cur_file = 0;
+    if (fstatat(dir, name, &tw->st, AT_SYMLINK_NOFOLLOW) < 0) {
+        perror(name);
+        return -1;
+    }
+    if (S_ISREG(tw->st.st_mode) || S_ISDIR(tw->st.st_mode)) {
+        fd = openat(dir, name, O_RDONLY | O_NOFOLLOW);
+        if (fd < 0) {
+            perror(name);
+            return -1;
+        }
+        file->fd = fd;
+        if (S_ISDIR(tw->st.st_mode)) {
+            ret = read_directory(tw, file);
+            if (ret < 0)
+                return ret;
+        }
+    }
+    return 0;
+}
+
+static int
+treewalk_open_real(Treewalk *tw, const char *path)
+{
+    int ret;
+
+    tw->depth = 0;
+    tw->path[0] = '/';
+    tw->path[1] = 0;
+    tw->stack[0].path_len = 0;
+    ret = examine_file(tw, AT_FDCWD, path);
+    return ret;
+}
+
+int
+treewalk_open(Treewalk **rtw, const char *path)
+{
+    Treewalk *tw;
+    int ret;
+
+    tw = malloc(sizeof(*tw));
+    if (tw == NULL) {
+        perror("malloc");
+        return -1;
+    }
+    ret = treewalk_open_real(tw, path);
+    if (ret < 0) {
+        free(tw);
+        return ret;
+    }
+    *rtw = tw;
+    return 0;
+}
+
+void treewalk_free(Treewalk **rtw)
+{
+    free(*rtw);
+    *rtw = NULL;
+}
+
+static void
+unexamine_file(Treewalk_file *file)
+{
+    free(file->all_files);
+    free(file->files);
+    file->all_files = NULL;
+    file->files = NULL;
+    file->nb_files = 0;
+    if (file->fd >= 0)
+        close(file->fd);
+    file->fd = -1;
+}
+
+int
+treewalk_next(Treewalk *tw)
+{
+    Treewalk_file *file = &tw->stack[tw->depth], *child;
+    const char *child_name;
+    size_t len;
+    int ret;
+
+    while (file->cur_file == file->nb_files) {
+        unexamine_file(file);
+        if (tw->depth == 0)
+            return 0;
+        tw->depth--;
+        file--;
+    }
+    if (tw->depth == PATH_DEPTH - 1) {
+        fprintf(stderr, "Directories too deep\n");
+        return -1;
+    }
+    child_name = file->files[file->cur_file];
+    child = &tw->stack[tw->depth + 1];
+    len = strlen(child_name) + 1;
+    if (len > PATH_LEN - file->path_len) {
+        fprintf(stderr, "Path too long\n");
+        return -1;
+    }
+    tw->path[file->path_len] = '/';
+    memcpy(tw->path + file->path_len + 1, child_name, len);
+    child->path_len = file->path_len + len;
+    tw->depth++;
+    file->cur_file++;
+    ret = examine_file(tw, file->fd, child_name);
+    if (ret < 0)
+        return ret;
+    return 1;
+}
+
+const char *
+treewalk_get_path(const Treewalk *tw)
+{
+    return tw->path;
+}
+
+const struct stat *
+treewalk_get_stat(const Treewalk *tw)
+{
+    return &tw->st;
+}
+
+int
+treewalk_get_fd(const Treewalk *tw)
+{
+    return S_ISREG(tw->st.st_mode) ? tw->stack[tw->depth].fd : -1;
+}
