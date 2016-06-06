@@ -29,7 +29,7 @@ multihash.o formatter.o: $(srcdir)formatter.h
 multihash.o parhash.o: $(srcdir)parhash.h
 multihash.o treewalk.o: $(srcdir)treewalk.h
 
-.PHONY: configure
+.PHONY: configure clean
 
 configure:
 	@if [ -e Makefile ]; then echo "Makefile is in the way"; false; fi
@@ -40,3 +40,6 @@ configure:
 	  printf "LIBS = %s\n" "$(LIBS)" ; \
 	  printf "include \$$(srcdir)Makefile\n" ; \
 	} > Makefile
+
+clean:
+	-rm -f multihash $(OBJECTS)
