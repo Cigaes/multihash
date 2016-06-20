@@ -1,0 +1,147 @@
+.TH multihash 1 "2016-06-20" multihash "multihash manual"
+
+.SH NAME
+
+multihash \- compute hash functions on collections of files
+
+.SH SYNOPSIS
+
+\fBmultihash\fR [\fIoption...\fR] [\fIfile...\fR]
+
+.SH DESCRIPTION
+
+Compute hash functions over the specified files or directories with optional
+caching.
+
+It supports the following hash functions:
+\fBCRC-32\fR, \fBMD5\fR, \fBSHA-1\fR, \fBSHA-256\fR, \fBSHA-512\fR.
+
+.SH OPTIONS
+
+.TP 
+\fB\-r\fR
+process directories recursively
+.IP
+In this mode, a single \fIfile\fR argument is accepted and is supposed to
+point to a directory. The contents of this directory is printed in JSON
+format. By default, the files are sorted lexically within each directory.
+
+.TP 
+\fB\-s\fR
+script-friendly output
+.IP
+In this mode, the file names on output are replaced by their index on the
+command-line, starting at 0, printed as 9 decimal digits.
+
+.TP 
+\fB\-v\fR
+verbose output: enable printing diagnostics on stderr
+
+.TP
+\fB\-C\fR
+disable caching
+
+.TP 
+\fB\-h\fR
+help
+
+.SH OUTPUT
+
+.SS Default output
+
+The default output format is similar to the output of the various individual
+commands for hashing, except that a single file will produce several lines
+of output, one for each supported hash function, and the hash value is
+prefixed with the name of the hash.
+
+.P
+The format is:
+
+.IP
+\fIhash_name\fB:\fIhash_value\ \ \fIfile_name\fR
+
+.P
+\fIhash_name\fR is the name of the hash functions, in lowercase and without
+dashes.
+
+.P
+\fIhash_value\fR is the computed hash value, in lowercase hexadecimal.
+
+.P
+\fIfile_name\fR is the file name, exactly as specified in input, without any
+escaping of special characters, including line breaks. With the \fB-s\fR
+option, it is replaced by the index of the file for easier parsing.
+
+.SS JSON output
+
+In JSON output mode, the output is an indented JSON object with a single key
+\fBfiles\fR containing an array of objects, one per file or directory.
+
+.P
+For each file, the object contains the following entries:
+
+.TP
+\fBpath\fR (string)
+path of the file within the specified directory; the specified directory
+itself is \fB/\fR, and all the other paths start with a slash
+
+.IP
+Note: the file names and corresponding JSON strings are treated as "extended
+ASCII": the octets corresponding to active JSON characters and control
+characters are escaped but the octets beyond 0x7F are stored as-is. If the
+file names are valid UTF-8, then the output is valid JSON; otherwise, the
+JSON might be slightly invalid.
+
+.TP
+\fBtype\fR (string)
+type of the file,
+\fBF\fR for regular files,
+\fBD\fR for directories,
+\fBL\fR for symbolic links (symlinks),
+\fBb\fR for block devices,
+\fBc\fR for character devices,
+\fBp\fR for named pipes (FIFOs),
+\fBs\fR for sockets
+
+.TP
+\fBsize\fR (number, only for plain files)
+size of the file
+
+.TP
+\fBmtime\fR (number)
+last modification time of the file as a standard Unix time
+
+.TP
+\fBmode\fR (string)
+mode of the file as 4 octal digits
+
+.TP
+\fBhash\fR (object, only for plain files)
+computed hashes of the files; the keys are the hash names in lowercase
+without dashes, the values are the hashes values as lowercase hexadecimal
+strings
+
+.SH FILES
+
+The cache is stored in the \fB~/.cache/multihash/\fR directory in Berkeley
+DB format.
+
+.SH AUTHOR
+
+Written by Nicolas George.
+
+.SH COPYRIGHT
+
+Copyright \(co 2016 Nicolas George.
+
+.P
+License: GPLv2: GNU GPL version 2
+.br
+<\fIhttp://www.gnu.org/licenses/old-licenses/gpl-2.0.html\fR>.
+
+.SH "SEE ALSO"
+.BR crc32 (1),
+.BR md5sum (1),
+.BR sha1sum (1),
+.BR sha256sum (1),
+.BR sha512sum (1)
