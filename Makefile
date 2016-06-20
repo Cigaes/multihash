@@ -12,6 +12,13 @@ ifeq ($(srcdir),)
 
 endif
 
+# Set configuration varialbes here if needed
+
+#CFLAGS += -I/opt/openssl/include
+#LDFLAGS += -L/opt/openssl/lib
+#LIBS =
+#PREFIX = /opt/multihash
+
 OBJECTS =
 OBJECTS += multihash.o
 OBJECTS += cache.o
