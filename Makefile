@@ -8,6 +8,7 @@ ifeq ($(srcdir),)
   srcdir = ./
   CFLAGS += -O2 -std=c99 -D_XOPEN_SOURCE=700
   CFLAGS += -Wall -W -Wno-pointer-sign -fdiagnostics-color=auto -g
+  PREFIX ?= /usr/local
 
 endif
 
@@ -29,7 +30,7 @@ multihash.o formatter.o: $(srcdir)formatter.h
 multihash.o parhash.o: $(srcdir)parhash.h
 multihash.o treewalk.o: $(srcdir)treewalk.h
 
-.PHONY: configure clean
+.PHONY: configure install clean
 
 configure:
 	@if [ -e Makefile ]; then echo "Makefile is in the way"; false; fi
@@ -38,8 +39,13 @@ configure:
 	  printf "CFLAGS = %s\n" "$(CFLAGS)" ; \
 	  printf "LDFLAGS = %s\n" "$(LDFLAGS)" ; \
 	  printf "LIBS = %s\n" "$(LIBS)" ; \
+	  printf "PREFIX = %s\n" "$(PREFIX)" ; \
 	  printf "include \$$(srcdir)Makefile\n" ; \
 	} > Makefile
+
+install: multihash
+	install -D -m 755 multihash $(DESTDIR)$(PREFIX)/bin/multihash
+	install -D -m 644 $(srcdir)multihash.1 $(DESTDIR)$(PREFIX)/share/man/man1/multihash.1
 
 clean:
 	-rm -f multihash $(OBJECTS)
