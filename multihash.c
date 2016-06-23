@@ -197,7 +197,7 @@ multihash_file(Multihash *mh, unsigned index, const char *path, int fd)
 static int
 multihash_tree_file(Multihash *mh, Treewalk *tw)
 {
-    const char *rel_path;
+    const char *rel_path, *target;
     const struct stat *st;
     const char *type;
     char *full_path;
@@ -240,6 +240,11 @@ multihash_tree_file(Multihash *mh, Treewalk *tw)
     if (fd >= 0) {
         formatter_dict_item(mh->formatter, "size");
         formatter_integer(mh->formatter, st->st_size);
+    }
+    if (S_ISLNK(st->st_mode)) {
+        target = treewalk_readlink(tw);
+        formatter_dict_item(mh->formatter, "target");
+        formatter_string(mh->formatter, target);
     }
     formatter_dict_item(mh->formatter, "mtime");
     formatter_integer(mh->formatter, st->st_mtime);

@@ -41,6 +41,7 @@ struct Treewalk {
     unsigned char path[PATH_LEN + 1];
     struct stat st;
     unsigned depth;
+    char target[8192];
 };
 
 static int
@@ -159,6 +160,18 @@ examine_file(Treewalk *tw, int dir, const char *name)
                 return ret;
         }
     }
+    if (S_ISLNK(tw->st.st_mode)) {
+        ret = readlinkat(dir, name, tw->target, sizeof(tw->target));
+        if (ret < 0) {
+            perror("readlink");
+            return -1;
+        }
+        if (ret >= (int)sizeof(tw->target)) {
+            fprintf(stderr, "symlink target too long\n");
+            return -1;
+        }
+        tw->target[ret] = 0;
+    }
     return 0;
 }
 
@@ -267,4 +280,9 @@ int
 treewalk_get_fd(const Treewalk *tw)
 {
     return S_ISREG(tw->st.st_mode) ? tw->stack[tw->depth].fd : -1;
+}
+
+const char *treewalk_readlink(const Treewalk *tw)
+{
+    return S_ISLNK(tw->st.st_mode) ? tw->target : NULL;
 }

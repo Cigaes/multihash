@@ -25,3 +25,5 @@ const char *treewalk_get_path(const Treewalk *tw);
 const struct stat *treewalk_get_stat(const Treewalk *tw);
 
 int treewalk_get_fd(const Treewalk *tw);
+
+const char *treewalk_readlink(const Treewalk *tw);
