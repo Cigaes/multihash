@@ -18,6 +18,8 @@ int treewalk_open(Treewalk **rtw, const char *path);
 
 void treewalk_free(Treewalk **rtw);
 
+void treewalk_set_follow(Treewalk *tw, int val);
+
 int treewalk_next(Treewalk *tw);
 
 const char *treewalk_get_path(const Treewalk *tw);

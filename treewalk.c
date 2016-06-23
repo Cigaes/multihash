@@ -42,6 +42,7 @@ struct Treewalk {
     struct stat st;
     unsigned depth;
     char target[8192];
+    uint8_t opt_follow;
 };
 
 static int
@@ -135,6 +136,7 @@ static int
 examine_file(Treewalk *tw, int dir, const char *name)
 {
     Treewalk_file *file = &tw->stack[tw->depth];
+    unsigned flags_stat = 0, flags_open = 0;
     int fd = -1, ret;
 
     /* stat() before open() in order to avoid opening special files */
@@ -143,12 +145,16 @@ examine_file(Treewalk *tw, int dir, const char *name)
     file->all_files = NULL;
     file->nb_files = 0;
     file->cur_file = 0;
-    if (fstatat(dir, name, &tw->st, AT_SYMLINK_NOFOLLOW) < 0) {
+    if (!tw->opt_follow) {
+        flags_stat |= AT_SYMLINK_NOFOLLOW;
+        flags_open |= O_NOFOLLOW;
+    }
+    if (fstatat(dir, name, &tw->st, flags_stat) < 0) {
         perror(name);
         return -1;
     }
     if (S_ISREG(tw->st.st_mode) || S_ISDIR(tw->st.st_mode)) {
-        fd = openat(dir, name, O_RDONLY | O_NOFOLLOW);
+        fd = openat(dir, name, O_RDONLY | flags_open);
         if (fd < 0) {
             perror(name);
             return -1;
@@ -212,6 +218,12 @@ void treewalk_free(Treewalk **rtw)
 {
     free(*rtw);
     *rtw = NULL;
+}
+
+void
+treewalk_set_follow(Treewalk *tw, int val)
+{
+    tw->opt_follow = val;
 }
 
 static void

@@ -38,6 +38,7 @@ typedef struct Multihash {
     const char *rec_root;
     struct Multihash_options {
         uint8_t no_cache;
+        uint8_t follow;
         uint8_t recursive;
         uint8_t script;
         uint8_t verbose;
@@ -290,6 +291,7 @@ multihash_tree(Multihash *mh)
     ret = treewalk_open(&tw, mh->rec_root);
     if (ret < 0)
         return 1;
+    treewalk_set_follow(tw, mh->opt.follow);
     while (1) {
         ret = multihash_tree_file(mh, tw);
         if (ret < 0)
@@ -320,10 +322,13 @@ main(int argc, char **argv)
     mh->opt.no_cache = 0;
     mh->opt.script = 0;
     mh->opt.verbose = 0;
-    while ((opt = getopt(argc, argv, "Crsvh")) != -1) {
+    while ((opt = getopt(argc, argv, "CLrsvh")) != -1) {
         switch (opt) {
             case 'C':
                 mh->opt.no_cache = 1;
+                break;
+            case 'L':
+                mh->opt.follow = 1;
                 break;
             case 'r':
                 mh->opt.recursive = 1;
