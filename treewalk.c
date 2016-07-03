@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
 #include <dirent.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -149,7 +150,9 @@ examine_file(Treewalk *tw, int dir, const char *name)
         flags_stat |= AT_SYMLINK_NOFOLLOW;
         flags_open |= O_NOFOLLOW;
     }
-    if (fstatat(dir, name, &tw->st, flags_stat) < 0) {
+    if (fstatat(dir, name, &tw->st, flags_stat) < 0 &&
+        (!tw->opt_follow || errno != ENOENT ||
+         fstatat(dir, name, &tw->st, flags_stat | AT_SYMLINK_NOFOLLOW) < 0)) {
         perror(name);
         return -1;
     }
