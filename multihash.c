@@ -308,7 +308,8 @@ static void
 usage(int ret)
 {
     fprintf(ret == 0 ? stdout : stderr,
-        "Usage: multihash [options] files\n");
+        "Usage: multihash [options] files\n"
+        "multihash version " VERSION "\n");
     exit(ret);
 }
 

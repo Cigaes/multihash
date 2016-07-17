@@ -37,6 +37,10 @@ multihash.o formatter.o: $(srcdir)formatter.h
 multihash.o parhash.o: $(srcdir)parhash.h
 multihash.o treewalk.o: $(srcdir)treewalk.h
 
+VERSION = $$(git log -n 1 --date=format:%Y%m%d --format=%ad-%h)
+multihash.o: CFLAGS += -DVERSION=\"$(VERSION)\"
+multihash.o: $(srcdir).git/logs/HEAD
+
 .PHONY: configure install clean
 
 configure:
