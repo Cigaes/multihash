@@ -309,6 +309,15 @@ usage(int ret)
 {
     fprintf(ret == 0 ? stdout : stderr,
         "Usage: multihash [options] files\n"
+        "\n"
+        "Options:\n"
+        "    -C : disable caching\n"
+        "    -L : follow symbolic links\n"
+        "    -r : process files recursively\n"
+        "    -s : script-friendly output\n"
+        "    -v : verbose output\n"
+        "    -h : print this help\n"
+        "\n"
         "multihash version " VERSION "\n");
     exit(ret);
 }
