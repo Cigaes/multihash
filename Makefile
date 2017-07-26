@@ -5,7 +5,7 @@
 
 ifeq ($(srcdir),)
 
-  srcdir = ./
+  srcdir = $(dir $(MAKEFILE_LIST))
   CFLAGS += -O2 -std=c99 -D_XOPEN_SOURCE=700
   CFLAGS += -Wall -W -Wno-pointer-sign -fdiagnostics-color=auto -g
   PREFIX ?= /usr/local
@@ -46,7 +46,7 @@ multihash.o: $(srcdir).git/logs/HEAD
 configure:
 	@if [ -e Makefile ]; then echo "Makefile is in the way"; false; fi
 	@{ \
-	  printf "srcdir = %s\n" $(dir $(MAKEFILE_LIST)) ; \
+	  printf "srcdir = %s\n" $(srcdir) ; \
 	  printf "CFLAGS = %s\n" "$(CFLAGS)" ; \
 	  printf "LDFLAGS = %s\n" "$(LDFLAGS)" ; \
 	  printf "LIBS = %s\n" "$(LIBS)" ; \
