@@ -404,10 +404,8 @@ multihash_tar(Multihash *mh)
     while (1) {
         ret = archive_next(ar);
         if (ret <= 0) {
-            if (ret < 0) {
-                perror("archive_next");
+            if (ret < 0)
                 errors = 1;
-            }
             break;
         }
         multihash_tar_file(mh, ar);
