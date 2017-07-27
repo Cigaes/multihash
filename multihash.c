@@ -27,6 +27,7 @@
 #include "formatter.h"
 #include "parhash.h"
 #include "treewalk.h"
+#include "archive.h"
 
 #define MIN_READ 65536
 #define MAX_READ (1024 * 1024)
@@ -40,27 +41,42 @@ typedef struct Multihash {
         uint8_t no_cache;
         uint8_t follow;
         uint8_t recursive;
+        uint8_t archive;
         uint8_t script;
         uint8_t verbose;
     } opt;
 } Multihash;
 
-static unsigned
-fill_buffer(Parhash *ph, int fd, unsigned max)
-{
-    struct iovec iov[2];
-    ssize_t r;
-    unsigned n;
+typedef struct Stream Stream;
+struct Stream {
+    unsigned (*fill_buffer)(Stream *, struct iovec *iov, unsigned niov);
+};
 
-    n = parhash_get_buffer(ph, max,
-        &iov[0].iov_base, &iov[0].iov_len,
-        &iov[1].iov_base, &iov[1].iov_len);
-    r = readv(fd, iov, n);
+typedef struct Stream_fd {
+    struct Stream stream;
+    int fd;
+} Stream_fd;
+
+static unsigned stream_fd_fill_buffer(Stream *s,
+    struct iovec *iov, unsigned niov)
+{
+    Stream_fd *s2 = (Stream_fd *)s;
+    ssize_t r;
+
+    r = readv(s2->fd, iov, niov);
     if (r < 0) {
         perror("read");
         exit(1);
     }
     return r;
+}
+
+static Stream_fd stream_fd(int fd)
+{
+    return (Stream_fd) {
+        .stream.fill_buffer = stream_fd_fill_buffer,
+        .fd = fd,
+    };
 }
 
 static void
@@ -94,26 +110,37 @@ multihash_output(Multihash *mh, unsigned index, const char *path)
     }
 }
 
-static int
-multihash_file_data(Parhash *ph, int fd, struct stat *st)
+static void
+multihash_stream_data(Parhash *ph, Stream *s)
 {
-    unsigned rd;
+    struct iovec iov[2];
+    unsigned n, rd;
 
     if (parhash_start(ph) < 0)
         exit(1);
-    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(fd, 0, 0, POSIX_FADV_WILLNEED);
-    posix_fadvise(fd, 0, 0, POSIX_FADV_NOREUSE);
     while (1) {
         parhash_wait_buffer(ph, MIN_READ);
         /* Do net read too much at once to avoid starving the threads */
-        rd = fill_buffer(ph, fd, MAX_READ);
+        n = parhash_get_buffer(ph, MAX_READ,
+            &iov[0].iov_base, &iov[0].iov_len,
+            &iov[1].iov_base, &iov[1].iov_len);
+        rd = s->fill_buffer(s, iov, n);
         if (rd == 0)
             break;
         parhash_advance(ph, rd);
     }
     parhash_finish(ph);
+}
 
+static int
+multihash_file_data(Parhash *ph, int fd, struct stat *st)
+{
+    Stream_fd s = stream_fd(fd);
+
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(fd, 0, 0, POSIX_FADV_WILLNEED);
+    posix_fadvise(fd, 0, 0, POSIX_FADV_NOREUSE);
+    multihash_stream_data(ph, &s.stream);
     if (fstat(fd, st) < 0) {
         perror("fstat");
         exit(1);
@@ -195,15 +222,42 @@ multihash_file(Multihash *mh, unsigned index, const char *path, int fd)
     return 0;
 }
 
+static void
+multihash_file_stat(Multihash *mh, const char *path, const char *type,
+    int size_flag, uint64_t size, const char *target, time_t mtime,
+    mode_t mode)
+{
+    char mode_str[5];
+
+    snprintf(mode_str, sizeof(mode_str), "%04o\n", (int)(mode & 07777));
+    formatter_array_item(mh->formatter);
+    formatter_dict_open(mh->formatter);
+    formatter_dict_item(mh->formatter, "path");
+    formatter_string(mh->formatter, path);
+    formatter_dict_item(mh->formatter, "type");
+    formatter_string(mh->formatter, type);
+    if (size_flag) {
+        formatter_dict_item(mh->formatter, "size");
+        formatter_integer(mh->formatter, size);
+    }
+    if (target != NULL) {
+        formatter_dict_item(mh->formatter, "target");
+        formatter_string(mh->formatter, target);
+    }
+    formatter_dict_item(mh->formatter, "mtime");
+    formatter_integer(mh->formatter, mtime);
+    formatter_dict_item(mh->formatter, "mode");
+    formatter_string(mh->formatter, mode_str);
+}
+
 static int
 multihash_tree_file(Multihash *mh, Treewalk *tw)
 {
-    const char *rel_path, *target;
+    const char *rel_path, *target = NULL;
     const struct stat *st;
     const char *type;
     char *full_path;
     size_t len1, len2;
-    char mode_str[5];
     int ret = 0, fd;
 
     rel_path = treewalk_get_path(tw);
@@ -230,27 +284,11 @@ multihash_tree_file(Multihash *mh, Treewalk *tw)
         return -1;
     memcpy(full_path, mh->rec_root, len1);
     memcpy(full_path + len1, rel_path, len2 + 1);
-    snprintf(mode_str, sizeof(mode_str), "%04o\n", (int)(st->st_mode & 07777));
-
-    formatter_array_item(mh->formatter);
-    formatter_dict_open(mh->formatter);
-    formatter_dict_item(mh->formatter, "path");
-    formatter_string(mh->formatter, rel_path);
-    formatter_dict_item(mh->formatter, "type");
-    formatter_string(mh->formatter, type);
-    if (fd >= 0) {
-        formatter_dict_item(mh->formatter, "size");
-        formatter_integer(mh->formatter, st->st_size);
-    }
-    if (S_ISLNK(st->st_mode)) {
+    if (S_ISLNK(st->st_mode))
         target = treewalk_readlink(tw);
-        formatter_dict_item(mh->formatter, "target");
-        formatter_string(mh->formatter, target);
-    }
-    formatter_dict_item(mh->formatter, "mtime");
-    formatter_integer(mh->formatter, st->st_mtime);
-    formatter_dict_item(mh->formatter, "mode");
-    formatter_string(mh->formatter, mode_str);
+
+    multihash_file_stat(mh, rel_path, type, fd >= 0, st->st_size, target,
+        st->st_mtime, st->st_mode);
     if (fd >= 0)
         ret = multihash_file(mh, 0, full_path, fd);
     formatter_dict_close(mh->formatter);
@@ -304,6 +342,80 @@ multihash_tree(Multihash *mh)
     return ret < 0;
 }
 
+typedef struct Stream_archive {
+    struct Stream stream;
+    Archive_reader *ar;
+} Stream_archive;
+
+static unsigned stream_archive_fill_buffer(Stream *s,
+    struct iovec *iov, unsigned niov)
+{
+    Stream_archive *s2 = (Stream_archive *)s;
+    int r;
+
+    assert(niov >= 1);
+    r = archive_read(s2->ar, iov[0].iov_base, iov[0].iov_len);
+    if (r < 0) {
+        perror("read");
+        exit(1);
+    }
+    return r;
+}
+
+static Stream_archive stream_archive(Archive_reader *ar)
+{
+    return (Stream_archive) {
+        .stream.fill_buffer = stream_archive_fill_buffer,
+        .ar = ar,
+    };
+}
+
+static void
+multihash_tar_file(Multihash *mh, Archive_reader *ar)
+{
+    Stream_archive s = stream_archive(ar);
+    char type[2] = { ar->type, 0 };
+    char *target;
+    int data;
+
+    data = ar->type == 'F';
+    target = ar->type == 'L' ? ar->target : NULL;
+    assert(data || ar->toread == 0);
+    multihash_file_stat(mh, ar->filename, type, data, ar->size, target,
+        ar->mtime, ar->mode);
+    if (data) {
+        multihash_stream_data(mh->ph, &s.stream);
+        multihash_output(mh, 0, NULL);
+    }
+    formatter_dict_close(mh->formatter);
+}
+
+static int
+multihash_tar(Multihash *mh)
+{
+    Archive_reader *ar;
+    int errors = 0, ret;
+
+    ret = archive_open(&ar, stdin);
+    if (ret < 0) {
+        perror("archive_open");
+        return 1;
+    }
+    while (1) {
+        ret = archive_next(ar);
+        if (ret <= 0) {
+            if (ret < 0) {
+                perror("archive_next");
+                errors = 1;
+            }
+            break;
+        }
+        multihash_tar_file(mh, ar);
+    }
+    archive_free(&ar);
+    return errors;
+}
+
 static void
 usage(int ret)
 {
@@ -332,7 +444,7 @@ main(int argc, char **argv)
     mh->opt.no_cache = 0;
     mh->opt.script = 0;
     mh->opt.verbose = 0;
-    while ((opt = getopt(argc, argv, "CLrsvh")) != -1) {
+    while ((opt = getopt(argc, argv, "CLrstvh")) != -1) {
         switch (opt) {
             case 'C':
                 mh->opt.no_cache = 1;
@@ -346,6 +458,9 @@ main(int argc, char **argv)
             case 's':
                 mh->opt.script = 1;
                 break;
+            case 't':
+                mh->opt.archive = 1;
+                break;
             case 'v':
                 mh->opt.verbose = 1;
                 break;
@@ -357,7 +472,7 @@ main(int argc, char **argv)
     }
     argc -= optind;
     argv += optind;
-    if (argc == 0)
+    if (argc == 0 && !mh->opt.archive)
         usage(1);
     if (parhash_alloc(&mh->ph) < 0)
         exit(1);
@@ -374,6 +489,16 @@ main(int argc, char **argv)
             exit(1);
         mh->rec_root = argv[0];
         errors += multihash_tree(mh);
+        formatted_output_finish(mh);
+    } else if (mh->opt.archive) {
+        if (argc != 0) {
+            fprintf(stderr, "multihash: will read archive from stdin\n");
+            exit(1);
+        }
+        ret = formatted_output_prepare(mh);
+        if (ret < 0)
+            exit(1);
+        errors += multihash_tar(mh);
         formatted_output_finish(mh);
     } else {
         for (i = 0; i < argc; i++)

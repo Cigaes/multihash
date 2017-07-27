@@ -25,6 +25,7 @@ OBJECTS += cache.o
 OBJECTS += formatter.o
 OBJECTS += parhash.o
 OBJECTS += treewalk.o
+OBJECTS += archive.o
 
 multihash: $(OBJECTS)
 	$(CC) $(LDFLAGS) -pthread -o $@ $(OBJECTS) -lcrypto -ldb $(LIBS)
@@ -36,6 +37,7 @@ multihash.o cache.o: $(srcdir)cache.h
 multihash.o formatter.o: $(srcdir)formatter.h
 multihash.o parhash.o: $(srcdir)parhash.h
 multihash.o treewalk.o: $(srcdir)treewalk.h
+multihash.o archive.o: $(srcdir)archive.h
 
 VERSION = $$(git log -n 1 --date=format:%Y%m%d --format=%ad-%h)
 multihash.o: CFLAGS += -DVERSION=\"$(VERSION)\"

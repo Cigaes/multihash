@@ -34,6 +34,15 @@ In this mode, the file names on output are replaced by their index on the
 command-line, starting at 0, printed as 9 decimal digits.
 
 .TP 
+\fB\-t\fR
+read tar archive file
+.IP
+In this mode, a tar archive file is read from the standard input and the
+properties of each file in it is printed in the same format as with the
+\fB\-r\fR option, except the file paths are printed exactly as in the
+archive, without leading slash, and the order is the order in the archive.
+
+.TP 
 \fB\-v\fR
 verbose output: enable printing diagnostics on stderr
 
