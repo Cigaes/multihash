@@ -56,6 +56,10 @@ configure:
 	  printf "include \$$(srcdir)Makefile\n" ; \
 	} > Makefile
 
+test: multihash
+	rm -rf tests
+	perl $(srcdir)selftest.plx
+
 install: multihash
 	install -D -m 755 multihash $(DESTDIR)$(PREFIX)/bin/multihash
 	install -D -m 644 $(srcdir)multihash.1 $(DESTDIR)$(PREFIX)/share/man/man1/multihash.1
