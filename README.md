@@ -21,6 +21,7 @@ Features
 * Parallel hashing.
 * Cached results.
 * Recursive exploration with JSON output of hashes and metadata.
+* Hashing of the files in a tar archive.
 
 Building
 --------
