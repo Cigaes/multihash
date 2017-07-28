@@ -29,8 +29,8 @@ archive_free(Archive_reader **rar)
     *rar = NULL;
 }
 
-intmax_t
-get_oct(uint8_t *p, unsigned len)
+static intmax_t
+get_oct(const uint8_t *p, unsigned len)
 {
     uint8_t *end = p + len;
     intmax_t r = 0;
@@ -42,7 +42,7 @@ get_oct(uint8_t *p, unsigned len)
     return r;
 }
 
-int
+static int
 is_all_zero(uint8_t *data, size_t size)
 {
     while (size-- > 0)
