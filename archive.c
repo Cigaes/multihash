@@ -86,14 +86,15 @@ get_mtime(const uint8_t *head)
 #define ATOFFSET(d) ATOFF, OFFAT(d)
 
 static int
-read_long_file_name(Archive_reader *ar, uint8_t *head)
+read_long_something(Archive_reader *ar, uint8_t *head,
+    char **val, char **buf, unsigned *buf_size)
 {
     static const uint8_t magic[LEN_PATH] = "././@LongLink";
     uint64_t size, bsize;
     int ret;
 
     if (memcmp(head + OFF_PATH, magic, sizeof(magic)) != 0) {
-        fprintf(stderr, "Invalid long file name pseudo-path"
+        fprintf(stderr, "Invalid long entry pseudo-path"
             ATOFFSET(sizeof(head)));
         return -1;
     }
@@ -104,16 +105,16 @@ read_long_file_name(Archive_reader *ar, uint8_t *head)
         return -1;
     }
     bsize = (size + 0x1FF) &~ 0x1FF;
-    if (bsize > ar->long_filename_buf_size) {
-        char *n = realloc(ar->long_filename_buf, bsize + 1);
+    if (bsize > *buf_size) {
+        char *n = realloc(*buf, bsize + 1);
         if (n == NULL) {
             perror("malloc");
             return -1;
         }
-        ar->long_filename_buf = n;
-        ar->long_filename_buf_size = bsize;
+        *buf = n;
+        *buf_size = bsize;
     }
-    ret = fread(ar->long_filename_buf, 1, bsize, ar->in);
+    ret = fread(*buf, 1, bsize, ar->in);
     if (ret != (int)bsize) {
         if (ret < 0)
             fprintf(stderr, "Read error in tar file" ATOFFSET(0));
@@ -121,9 +122,23 @@ read_long_file_name(Archive_reader *ar, uint8_t *head)
             fprintf(stderr, "Truncated tar file" ATOFFSET(0));
         return -1;
     }
-    ar->long_filename_buf[size] = 0;
-    ar->filename = ar->long_filename_buf;
+    (*buf)[size] = 0;
+    (*val) = *buf;
     return 0;
+}
+
+static int
+read_long_file_name(Archive_reader *ar, uint8_t *head)
+{
+    return read_long_something(ar, head, &ar->filename,
+        &ar->long_filename_buf, &ar->long_filename_buf_size);
+}
+
+static int
+read_long_link(Archive_reader *ar, uint8_t *head)
+{
+    return read_long_something(ar, head, &ar->target,
+        &ar->long_target_buf, &ar->long_target_buf_size);
 }
 
 int
@@ -135,6 +150,7 @@ archive_next(Archive_reader *ar)
 
     assert(ar->toread == 0);
     ar->filename = ar->filename_buf;
+    ar->target = ar->target_buf;
     while (1) {
         ret = fread(head, 1, sizeof(head), ar->in);
         if (ret == 0) {
@@ -150,6 +166,10 @@ archive_next(Archive_reader *ar)
             type = head[OFF_TYPE];
             if (type == 'L') {
                 ret = read_long_file_name(ar, head);
+                if (ret < 0)
+                    return -1;
+            } else if (type == 'K') {
+                ret = read_long_link(ar, head);
                 if (ret < 0)
                     return -1;
             } else if (!is_all_zero(head, sizeof(head))) {
@@ -171,8 +191,8 @@ archive_next(Archive_reader *ar)
 
     memcpy(ar->filename_buf, head + OFF_PATH, LEN_PATH);
     ar->filename_buf[LEN_PATH] = 0;
-    memcpy(ar->target, head + OFF_TARGET, LEN_PATH);
-    ar->target[LEN_PATH] = 0;
+    memcpy(ar->target_buf, head + OFF_TARGET, LEN_PATH);
+    ar->target_buf[LEN_PATH] = 0;
     ar->mode = get_mode(head);
     ar->size = get_size(head);
     ar->mtime = get_mtime(head);
