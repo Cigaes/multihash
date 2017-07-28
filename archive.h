@@ -2,11 +2,14 @@ typedef struct Archive_reader Archive_reader;
 
 struct Archive_reader {
     FILE *in;
+    char *filename;
     uint64_t toread;
     uint64_t size;
     int64_t mtime;
     unsigned mode;
-    uint8_t filename[101];
+    char *long_filename_buf;
+    unsigned long_filename_buf_size;
+    uint8_t filename_buf[101];
     uint8_t target[101];
     char type;
 };
