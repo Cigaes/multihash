@@ -84,16 +84,17 @@ sub create_symlink($$) {
 }
 
 my $long = "0123456789" x 4;
+my $long_path = "long_directory_name_${long}/long_file_name_${long}";
 
 create_file "test1", 10000, 0644;
 create_file "subdir/test2", 2000, 0644;
 create_file "private", 1500, 0600;
 create_file "empty", 0, 0644;
 create_file "integer", 512 * 7, 0644;
-create_file "long_directory_name_${long}/long_file_name_${long}", 2500, 0644;
+create_file $long_path, 2500, 0644;
 create_symlink "symlink", "test1";
-create_symlink "long_symlink",
-  "long_directory_name_${long}/long_file_name_${long}";
+create_symlink "long_symlink", $long_path;
+create_symlink "long_symlink_with_long_path_" . "1234567890" x 12, $long_path;
 
 #unshift @files, { path => "tests/", type => "D" };
 $files[0]->{path} .= "/";
