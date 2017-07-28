@@ -1,6 +1,6 @@
 /*
  * multihash - compute hashes on collections of files
- * Copyright (c) 2016 Nicolas George <george@nsup.org>
+ * Copyright (c) 2017 Nicolas George <george@nsup.org>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
