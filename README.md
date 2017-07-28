@@ -51,10 +51,10 @@ Copyright
 Copyright (c) 2017 Nicolas George <george@nsup.org>
 
 This program is free software; you can redistribute it and/or modify it
-under the terms of the [GNU General Public License version 2]
-(http://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
-as published
-by the Free Software Foundation.
+under the terms of the [GNU General Public License version 2][GPLv2]
+as published by the Free Software Foundation.
+
+  [GPLv2]: http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
 This program is distributed in the hope that it will be useful, but
 WITHOUT ANY WARRANTY; without even the implied warranty of
