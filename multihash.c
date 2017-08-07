@@ -425,6 +425,7 @@ usage(int ret)
         "    -L : follow symbolic links\n"
         "    -r : process files recursively\n"
         "    -s : script-friendly output\n"
+        "    -t : process tar archive from stdin\n"
         "    -v : verbose output\n"
         "    -h : print this help\n"
         "\n"
