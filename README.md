@@ -30,7 +30,7 @@ Building
 system compatible with Single Unix v4. It has been tested with GNU/Linux.
 
 It does not use a `configure` script but supports the usual make variables:
-`CFLAGS`, `LDFLAG`, `LIBS`, `PREFIX`, `DESTDIR`. Build options can be
+`CFLAGS`, `LDFLAGS`, `LIBS`, `PREFIX`, `DESTDIR`. Build options can be
 changed directly in the `Makefile` or passed to the make command-line:
 
 ```
