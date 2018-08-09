@@ -229,7 +229,7 @@ multihash_file_stat(Multihash *mh, const char *path, const char *type,
 {
     char mode_str[5];
 
-    snprintf(mode_str, sizeof(mode_str), "%04o\n", (int)(mode & 07777));
+    snprintf(mode_str, sizeof(mode_str), "%04o", (int)(mode & 07777));
     formatter_array_item(mh->formatter);
     formatter_dict_open(mh->formatter);
     formatter_dict_item(mh->formatter, "path");
