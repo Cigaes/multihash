@@ -476,6 +476,7 @@ main(int argc, char **argv)
                 break;
             case 'h':
                 usage(0);
+                assert(0);
             default:
                 usage(1);
         }
