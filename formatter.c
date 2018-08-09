@@ -64,11 +64,13 @@ formatter_open(Formatter *fmt)
     fmt->depth = 0;
 }
 
-void
+int
 formatter_close(Formatter *fmt)
 {
     assert(fmt->depth == 0);
     putc('\n', stdout);
+    fflush(stdout);
+    return ferror(stdout);
 }
 
 void

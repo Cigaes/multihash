@@ -296,6 +296,14 @@ multihash_tree_file(Multihash *mh, Treewalk *tw)
     return ret == 0 ? 0 : -1;
 }
 
+static int report_write_error(int err)
+{
+    if (err == 0)
+        return 0;
+    perror("Error writing to output");
+    return 1;
+}
+
 static int
 formatted_output_prepare(Multihash *mh)
 {
@@ -311,13 +319,16 @@ formatted_output_prepare(Multihash *mh)
     return 0;
 }
 
-static void
+static int
 formatted_output_finish(Multihash *mh)
 {
+    int ret;
+
     formatter_array_close(mh->formatter);
     formatter_dict_close(mh->formatter);
-    formatter_close(mh->formatter);
+    ret = formatter_close(mh->formatter);
     formatter_free(&mh->formatter);
+    return report_write_error(ret);
 }
 
 static int
@@ -488,7 +499,7 @@ main(int argc, char **argv)
             exit(1);
         mh->rec_root = argv[0];
         errors += multihash_tree(mh);
-        formatted_output_finish(mh);
+        errors += formatted_output_finish(mh);
     } else if (mh->opt.archive) {
         if (argc != 0) {
             fprintf(stderr, "multihash: will read archive from stdin\n");
@@ -498,10 +509,13 @@ main(int argc, char **argv)
         if (ret < 0)
             exit(1);
         errors += multihash_tar(mh);
-        formatted_output_finish(mh);
+        errors += formatted_output_finish(mh);
     } else {
         for (i = 0; i < argc; i++)
             errors += multihash_file(mh, i, argv[i], -1);
+        fflush(stdout);
+        fprintf(stderr, "%d\n", ferror(stdout));
+        errors += report_write_error(ferror(stdout));
     }
     stat_cache_free(&mh->cache);
     parhash_free(&mh->ph);

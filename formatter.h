@@ -22,7 +22,7 @@ void formatter_free(Formatter **rfmt);
 
 void formatter_open(Formatter *fmt);
 
-void formatter_close(Formatter *fmt);
+int formatter_close(Formatter *fmt);
 
 void formatter_dict_open(Formatter *fmt);
 
