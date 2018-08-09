@@ -515,7 +515,6 @@ main(int argc, char **argv)
         for (i = 0; i < argc; i++)
             errors += multihash_file(mh, i, argv[i], -1);
         fflush(stdout);
-        fprintf(stderr, "%d\n", ferror(stdout));
         errors += report_write_error(ferror(stdout));
     }
     stat_cache_free(&mh->cache);
