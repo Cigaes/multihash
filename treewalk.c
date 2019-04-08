@@ -26,7 +26,7 @@
 #include "treewalk.h"
 
 #define PATH_LEN 4095
-#define PATH_DEPTH 16
+#define PATH_DEPTH 64
 
 typedef struct Treewalk_file {
     char **files;
