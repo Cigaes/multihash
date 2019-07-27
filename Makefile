@@ -39,7 +39,7 @@ multihash.o parhash.o: $(srcdir)parhash.h
 multihash.o treewalk.o: $(srcdir)treewalk.h
 multihash.o archive.o: $(srcdir)archive.h
 
-VERSION = $$(git log -n 1 --date=format:%Y%m%d --format=%ad-%h)
+VERSION = $$(git --git-dir $(srcdir)/.git log -n 1 --date=format:%Y%m%d --format=%ad-%h)
 multihash.o: CFLAGS_SRC += -DVERSION=\"$(VERSION)\"
 multihash.o: $(srcdir).git/logs/HEAD
 
