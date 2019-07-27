@@ -208,6 +208,7 @@ treewalk_open(Treewalk **rtw, const char *path)
         perror("malloc");
         return -1;
     }
+    tw->opt_follow = 0;
     ret = treewalk_open_real(tw, path);
     if (ret < 0) {
         free(tw);
