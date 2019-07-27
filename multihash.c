@@ -452,6 +452,9 @@ main(int argc, char **argv)
 
     mh->formatter = NULL;
     mh->opt.no_cache = 0;
+    mh->opt.follow = 0;
+    mh->opt.recursive = 0;
+    mh->opt.archive = 0;
     mh->opt.script = 0;
     mh->opt.verbose = 0;
     while ((opt = getopt(argc, argv, "CLrstvh")) != -1) {
