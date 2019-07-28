@@ -333,7 +333,8 @@ treewalk_get_fd(const Treewalk *tw)
     return S_ISREG(tw->st.st_mode) ? tw->stack[tw->depth].fd : -1;
 }
 
-const char *treewalk_readlink(const Treewalk *tw)
+const char *
+treewalk_readlink(const Treewalk *tw)
 {
     return S_ISLNK(tw->st.st_mode) ? tw->target : NULL;
 }
