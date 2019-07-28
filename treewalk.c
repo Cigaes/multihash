@@ -52,16 +52,16 @@ struct Treewalk {
 static int
 read_directory_files(Treewalk_file *file, DIR *dir)
 {
-    struct dirent de_real, *de;
+    struct dirent *de;
     char *files = NULL;
     size_t files_alloc = 0, files_used = 0, size;
     unsigned nb_files = 0;
-    int ret;
 
     while (1) {
-        ret = readdir_r(dir, &de_real, &de);
-        if (ret != 0) {
-            fprintf(stderr, "readdir_r failed with ret = %d\n", ret);
+        errno = 0;
+        de = readdir(dir);
+        if (de == NULL && errno != 0) {
+            perror("readdir failed");
             break;
         }
         if (de == NULL)
