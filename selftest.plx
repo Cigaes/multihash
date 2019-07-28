@@ -95,6 +95,7 @@ create_file $long_path, 2500, 0644;
 create_symlink "symlink", "test1";
 create_symlink "long_symlink", $long_path;
 create_symlink "long_symlink_with_long_path_" . "1234567890" x 12, $long_path;
+create_file "skipped/excluded", 16, 0644;
 
 #unshift @files, { path => "tests/", type => "D" };
 $files[0]->{path} .= "/";
@@ -105,11 +106,45 @@ for my $f (@files) {
   $f->{mtime} = (lstat $f->{path})[9];
   $f->{path} =~ s/^tests//;
 }
+my @files_x = grep { $_->{path} !~ /^\/skipped\// } @files;
+@files_x = map {
+  $_->{path} eq "/skipped" ? { %$_, subtree_skipped => 1 } : $_
+} @files_x;
+
+sub files_to_json(@) {
+  my (@files) = @_;
+  my $json = "{\n   \"files\" : [\n";
+  for my $f (@files) {
+    $json .= "      {\n";
+    for my $t (qw{path type target +size +mtime mode ?subtree_skipped}) {
+      my $t = $t;
+      my $mod = $t =~ s/^([+?])// ? $1 : "";
+      my $quot = $mod ? "" : "\"";
+      my $v = $f->{$t};
+      next unless defined $v;
+      $v = $v ? "true" : "false" if $mod eq "?";
+      $json .= "         \"$t\" : $quot$v$quot,\n";
+    }
+    my $h = $f->{hash};
+    if (defined $h) {
+      $json .= "         \"hash\" : {\n";
+      for my $d (@digests) {
+        my $t = $d->{tag};
+        my $h = $f->{hash}->{$t};
+        $json .= sprintf "            \"%s\" : \"%s\",\n", $t, $h;
+      }
+      $json .= "         },\n";
+    }
+    $json .= "      },\n";
+  }
+  $json .= "   ]\n}\n";
+  $json =~ s/,(?=\s*[\}\]])//gs or die; # JSON sucks
+  return $json;
+}
 
 my @reg_files;
 my $out1_ref = "";
 my $out2_ref = "";
-my $out3_ref = "{\n   \"files\" : [\n";
 my $idx = 0;
 for my $f (@files) {
   if ($f->{type} eq "F") {
@@ -123,35 +158,15 @@ for my $f (@files) {
     }
     $idx++;
   }
-  $out3_ref .= "      {\n";
-  for my $t (qw{path type target +size +mtime mode}) {
-    my $t = $t;
-    my $quot = $t =~ s/^\+// ? "" : "\"";
-    my $v = $f->{$t};
-    next unless defined $v;
-    $out3_ref .= "         \"$t\" : $quot$v$quot,\n";
-  }
-  my $h = $f->{hash};
-  if (defined $h) {
-    $out3_ref .= "         \"hash\" : {\n";
-    for my $d (@digests) {
-      my $t = $d->{tag};
-      my $h = $f->{hash}->{$t};
-      $out3_ref .= sprintf "            \"%s\" : \"%s\",\n", $t, $h;
-    }
-    $out3_ref .= "         },\n";
-  }
-  $out3_ref .= "      },\n";
 }
-$out3_ref .= "   ]\n}\n";
-$out3_ref =~ s/,(?=\s*[\}\]])//gs or die; # JSON sucks
-my $out4_ref = $out3_ref;
+my $out3_ref = files_to_json @files_x;
+my $out4_ref = files_to_json @files;
 $out4_ref =~ s/"path" : "\//"path" : "tests\//g or die;
 $out4_ref =~ s/"tests\/"/"tests"/ or die; # exception
 
 my $out1 = read_file "-|", "./multihash", "-C", @reg_files;
 my $out2 = read_file "-|", "./multihash", "-Cs", @reg_files;
-my $out3 = read_file "-|", "./multihash", "-Cr", "tests";
+my $out3 = read_file "-|", "./multihash", "-Cr", "-x", "/skipped", "tests";
 my $out4 = read_file "-|", "tar c tests | ./multihash -Ct";
 
 sub test_success($$$) {
