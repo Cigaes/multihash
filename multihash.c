@@ -38,6 +38,8 @@ typedef struct Multihash {
     Formatter *formatter;
     const char *rec_root;
     struct Multihash_options {
+        const char **exclude;
+        size_t nb_exclude;
         uint8_t no_cache;
         uint8_t follow;
         uint8_t recursive;
@@ -291,6 +293,10 @@ multihash_tree_file(Multihash *mh, Treewalk *tw)
         st->st_mtime, st->st_mode);
     if (fd >= 0)
         ret = multihash_file(mh, 0, full_path, fd);
+    if (treewalk_get_subtree_skipped(tw)) {
+        formatter_dict_item(mh->formatter, "subtree_skipped");
+        formatter_bool(mh->formatter, 1);
+    }
     formatter_dict_close(mh->formatter);
     free(full_path);
     return ret == 0 ? 0 : -1;
@@ -341,6 +347,7 @@ multihash_tree(Multihash *mh)
     if (ret < 0)
         return 1;
     treewalk_set_follow(tw, mh->opt.follow);
+    treewalk_set_exclude(tw, mh->opt.exclude, mh->opt.nb_exclude);
     while (1) {
         ret = multihash_tree_file(mh, tw);
         if (ret < 0)
@@ -426,6 +433,24 @@ multihash_tar(Multihash *mh)
 }
 
 static void
+opt_add_exclude(struct Multihash_options *opt, const char *excl)
+{
+    if (excl[0] != '/')
+        fprintf(stderr, "multihash: invalid exclude will be ignored: %s\n",
+            excl);
+    if ((opt->nb_exclude & (opt->nb_exclude + 1)) == 0) {
+        size_t n = opt->nb_exclude * 2 + 1;
+        opt->exclude = realloc(opt->exclude, sizeof(*opt->exclude) * n);
+        if (opt->exclude == NULL) {
+            perror("Out of memory");
+            exit(1);
+        }
+    }
+    opt->exclude[opt->nb_exclude] = excl;
+    opt->nb_exclude++;
+}
+
+static void
 usage(int ret)
 {
     fprintf(ret == 0 ? stdout : stderr,
@@ -438,6 +463,7 @@ usage(int ret)
         "    -s : script-friendly output\n"
         "    -t : process tar archive from stdin\n"
         "    -v : verbose output\n"
+        "    -x : exclude path in recursive mode\n"
         "    -h : print this help\n"
         "\n"
         "multihash version " VERSION "\n");
@@ -457,7 +483,9 @@ main(int argc, char **argv)
     mh->opt.archive = 0;
     mh->opt.script = 0;
     mh->opt.verbose = 0;
-    while ((opt = getopt(argc, argv, "CLrstvh")) != -1) {
+    mh->opt.exclude = NULL;
+    mh->opt.nb_exclude = 0;
+    while ((opt = getopt(argc, argv, "CLrstvx:h")) != -1) {
         switch (opt) {
             case 'C':
                 mh->opt.no_cache = 1;
@@ -476,6 +504,9 @@ main(int argc, char **argv)
                 break;
             case 'v':
                 mh->opt.verbose = 1;
+                break;
+            case 'x':
+                opt_add_exclude(&mh->opt, optarg);
                 break;
             case 'h':
                 usage(0);
@@ -522,5 +553,6 @@ main(int argc, char **argv)
     }
     stat_cache_free(&mh->cache);
     parhash_free(&mh->ph);
+    free(mh->opt.exclude);
     return errors > 0;
 }

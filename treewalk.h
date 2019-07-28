@@ -20,6 +20,8 @@ void treewalk_free(Treewalk **rtw);
 
 void treewalk_set_follow(Treewalk *tw, int val);
 
+void treewalk_set_exclude(Treewalk *tw, const char **excl, size_t nb_excl);
+
 int treewalk_next(Treewalk *tw);
 
 const char *treewalk_get_path(const Treewalk *tw);
@@ -29,3 +31,5 @@ const struct stat *treewalk_get_stat(const Treewalk *tw);
 int treewalk_get_fd(const Treewalk *tw);
 
 const char *treewalk_readlink(const Treewalk *tw);
+
+int treewalk_get_subtree_skipped(const Treewalk *tw);

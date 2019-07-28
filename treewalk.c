@@ -35,6 +35,7 @@ typedef struct Treewalk_file {
     unsigned path_len;
     unsigned nb_files;
     unsigned cur_file;
+    uint8_t subtree_skipped;
 } Treewalk_file;
 
 struct Treewalk {
@@ -43,6 +44,8 @@ struct Treewalk {
     struct stat st;
     unsigned depth;
     char target[8192];
+    const char **exclude;
+    size_t nb_exclude;
     uint8_t opt_follow;
 };
 
@@ -134,6 +137,22 @@ read_directory(Treewalk *tw, Treewalk_file *file)
 }
 
 static int
+should_recurse(Treewalk *tw)
+{
+    size_t i;
+
+    if (!S_ISDIR(tw->st.st_mode))
+        return 0;
+    for (i = 0; i < tw->nb_exclude; i++) {
+        if (strcmp(tw->path, tw->exclude[i]) == 0) {
+            tw->stack[tw->depth].subtree_skipped = 1;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int
 examine_file(Treewalk *tw, int dir, const char *name)
 {
     Treewalk_file *file = &tw->stack[tw->depth];
@@ -146,6 +165,7 @@ examine_file(Treewalk *tw, int dir, const char *name)
     file->all_files = NULL;
     file->nb_files = 0;
     file->cur_file = 0;
+    file->subtree_skipped = 0;
     if (!tw->opt_follow) {
         flags_stat |= AT_SYMLINK_NOFOLLOW;
         flags_open |= O_NOFOLLOW;
@@ -156,7 +176,7 @@ examine_file(Treewalk *tw, int dir, const char *name)
         perror(name);
         return -1;
     }
-    if (S_ISREG(tw->st.st_mode) || S_ISDIR(tw->st.st_mode)) {
+    if (S_ISREG(tw->st.st_mode) || should_recurse(tw)) {
         fd = openat(dir, name, O_RDONLY | flags_open);
         if (fd < 0) {
             perror(name);
@@ -209,6 +229,8 @@ treewalk_open(Treewalk **rtw, const char *path)
         return -1;
     }
     tw->opt_follow = 0;
+    tw->exclude = NULL;
+    tw->nb_exclude = 0;
     ret = treewalk_open_real(tw, path);
     if (ret < 0) {
         free(tw);
@@ -228,6 +250,13 @@ void
 treewalk_set_follow(Treewalk *tw, int val)
 {
     tw->opt_follow = val;
+}
+
+void
+treewalk_set_exclude(Treewalk *tw, const char **excl, size_t nb_excl)
+{
+    tw->exclude = excl;
+    tw->nb_exclude = nb_excl;
 }
 
 static void
@@ -290,6 +319,12 @@ const struct stat *
 treewalk_get_stat(const Treewalk *tw)
 {
     return &tw->st;
+}
+
+int
+treewalk_get_subtree_skipped(const Treewalk *tw)
+{
+    return tw->stack[tw->depth].subtree_skipped;
 }
 
 int

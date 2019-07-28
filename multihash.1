@@ -47,6 +47,15 @@ archive, without leading slash, and the order is the order in the archive.
 verbose output: enable printing diagnostics on stderr
 
 .TP
+\fB\-x\fR \fIpattern\fR
+exclude \fIpattern\fR from recursive indexing
+.IP
+If \fIpattern\fR begins with a \fB/\fR, exclude the subtree starting at the
+given path from the indexing root. The file itself will not be excluded, and
+if it is a directory, its \fBsubtree_skipped\fR attribute will be set to
+\fBtrue\fR.
+
+.TP
 \fB\-C\fR
 disable caching
 
@@ -131,6 +140,11 @@ last modification time of the file as a standard Unix time
 .TP
 \fBmode\fR (string)
 mode of the file as 4 octal digits
+
+.TP
+\fBsubtree_skipped\fR (boolean)
+true if the file is a directory whose contents was skipped due to exclude
+patterns.
 
 .TP
 \fBhash\fR (object, only for plain files)

@@ -149,3 +149,10 @@ formatter_integer(Formatter *fmt, intmax_t x)
     (void)fmt;
     fprintf(stdout, "%jd", x);
 }
+
+void
+formatter_bool(Formatter *fmt, int x)
+{
+    (void)fmt;
+    fprintf(stdout, "%s", x ? "true" : "false");
+}

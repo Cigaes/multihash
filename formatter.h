@@ -39,3 +39,5 @@ void formatter_array_item(Formatter *fmt);
 void formatter_string(Formatter *fmt, const unsigned char *str);
 
 void formatter_integer(Formatter *fmt, intmax_t x);
+
+void formatter_bool(Formatter *fmt, int x);
